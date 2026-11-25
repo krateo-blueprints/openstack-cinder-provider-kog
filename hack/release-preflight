@@ -1,9 +1,11 @@
 #!/bin/sh
 # Release preflight for openstack-cinder-provider-kog. The org-standard reusable workflow
-# krateo-blueprints/charts release-preflight.yaml (which release-oci 2.1.0 calls) runs this with the version being released as $1,
-# before anything is published (PUBLISHING.md rule 12); a non-zero exit refuses the release.
+# krateo-blueprints/charts release-preflight.yaml (which release-oci 2.1.0 calls) runs this with the version being
+# released as $1, before anything is published (PUBLISHING.md rule 12); a non-zero exit refuses the release.
 #
 # Checks:
+#   - the version is plain X.Y.Z (hack/release-version.sh, the one place the shapes are decided): a pre-release
+#     version (X.Y.Z-main.g<sha7>, published to GHCR only by prerelease.yaml) can never be released by a tag;
 #   - every example Composition names composition.krateo.io/v<version with dots as dashes>
 #     (nothing stamps examples/, so the bump is by hand; see hack/validate-example-versions.py).
 set -eu
@@ -12,4 +14,5 @@ if [ "$#" -ne 1 ] || [ -z "$1" ]; then
   exit 2
 fi
 cd "$(dirname "$0")/.."
+bash hack/release-version.sh check release "$1"
 python3 hack/validate-example-versions.py "$1" examples

@@ -13,7 +13,9 @@ same run.
 | `render-check.py` | a generation error from oasgen-render, a missing CRD, a request envelope that is not an object in the spec (the Kind/property collision nova-kog met), a declared status field missing from the generated status | adapted from azuredevops-provider-kog |
 | `check-retracted.py` | rendering against an oasgen-provider version its publisher retracted | azuredevops-provider-kog, unchanged |
 | `preflight-refs.py` | a chart or image reference that does not resolve anonymously | azuredevops-provider-kog, unchanged |
-| `release-preflight` + `validate-example-versions.py` | a release whose example Composition names another version (PUBLISHING.md rule 12) | openstack-neutron-operator-kog `9804a2e`, comments adapted |
+| `validate-prerelease-channel.py` | a `prerelease.yaml` that could reach the index, a release or a tag (any trigger but dispatch, permissions other than exactly `contents: read` + `packages: write`, a reusable workflow, a secret but `GITHUB_TOKEN`, a persisted checkout credential, a push before the pre-release shape check, missing stamps, examples not agreeing with the CompositionDefinition); `release-version.sh` shapes and `derive`; 26 mutations of the workflow and 5 loosened patterns, each of which must be caught | krateo-blueprints/rook-ceph-blueprint `2f4ce94`, adapted |
+| `release-version.sh` | the one definition of the release (`X.Y.Z`) and pre-release (`X.Y.Z-main.g<sha7>`, `-dev.g<sha7>`) shapes, and `derive` | rook-ceph-blueprint `2f4ce94`, adapted to `examples/composition` and one CompositionDefinition |
+| `release-preflight` + `validate-example-versions.py` | a release whose version is not plain `X.Y.Z`, or whose example Composition names another version (PUBLISHING.md rule 12) | openstack-neutron-operator-kog `9804a2e`, comments adapted |
 
 The citations in `chart/assets/volume.yaml` say where each field comes from in Cinder. The gates check the
 document, not Cinder: that the document is faithful to Cinder is what those citations are for.

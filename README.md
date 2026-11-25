@@ -125,7 +125,9 @@ hook), and a render through oasgen-provider's own generator at two versions. `se
 
 A plain `X.Y.Z` tag releases through the shared `release-oci` 2.1.0, index channel `blueprints`. Bump
 `examples/composition/composition.yaml` to the new version first: the release refuses it otherwise.
-See [docs/release.md](docs/release.md).
+See [docs/release.md](docs/release.md). To test a commit before its tag, `prerelease.yaml` pushes
+`X.Y.Z-main.g<sha7>` to GHCR only, with the stamped CompositionDefinition and examples as a run artifact
+([docs/release.md](docs/release.md), "Pre-releases").
 
 ## License
 
