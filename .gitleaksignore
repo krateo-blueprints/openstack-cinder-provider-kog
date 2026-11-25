@@ -1,0 +1,5 @@
+# One-off, not a credential: commit d4bb901 tested the values schema with the URL
+# http://cinder-api:8776/v3/<8 hex characters>, and gitleaks' generic-api-key rule read the hex
+# segment as a key. acacb4d replaced it with /v3/my-project. The fingerprint names that commit and
+# line, so it matches nothing else.
+d4bb9014fbde3107896e7eb3879c228420e0dc59:.github/workflows/lint.yaml:generic-api-key:69
