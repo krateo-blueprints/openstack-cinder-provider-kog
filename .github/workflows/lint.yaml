@@ -65,10 +65,16 @@ jobs:
           n=$(grep -c '^kind: RestDefinition$' "$RUNNER_TEMP/render.yaml" || true)
           echo "rendered ${n} RestDefinition(s)"
           [ "$n" -ge 1 ] || { echo "::error::the chart rendered no RestDefinition"; exit 1; }
-          # The schema refuses an upstreamEndpoint that carries a project id (docs/overview.md).
-          if helm template t chart --set authBridge.upstreamEndpoint=http://cinder-api:8776/v3/0123abcd > /dev/null 2>&1; then
-            echo "::error::values.schema.json accepted an upstreamEndpoint with a project id"; exit 1
+          # The schema refuses an upstreamEndpoint that carries a project id (README, "Project-less URLs"),
+          # and it must be the schema's pattern that refuses it, not some other error.
+          rc=0
+          helm template t chart --set authBridge.upstreamEndpoint=http://cinder-api:8776/v3/my-project \
+            > /dev/null 2> "$RUNNER_TEMP/refused.txt" || rc=$?
+          if [ "$rc" = 0 ] || ! grep -q "/authBridge/upstreamEndpoint.*does not match pattern" "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt"
+            echo "::error::values.schema.json did not refuse an upstreamEndpoint with a project id"; exit 1
           fi
+          echo "values.schema.json refuses an upstreamEndpoint with a project id"
           helm template t chart --set authBridge.upstreamEndpoint=http://cinder-api:8776/v3 > /dev/null
 
       # Gating. No inline { } or [ ] anywhere: committed YAML, the render, the OpenAPI asset, docs blocks.
