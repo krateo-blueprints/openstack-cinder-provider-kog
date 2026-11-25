@@ -1,0 +1,237 @@
+openapi: 3.0.3
+info:
+  title: OpenStack Block Storage (Cinder) v3 - Volumes (KOG subset)
+  description: |
+    Hand-curated OpenAPI 3.0 subset of the Cinder block-storage v3 API: create, show and
+    delete a volume. Every field below was read from cinder at stable/2026.1 (commit
+    58f7ac750dba3648d0f5c8517dba5e8f529f26cd) and from the Block Storage API v3 reference,
+    https://docs.openstack.org/api-ref/block-storage/v3/ (source: cinder
+    api-ref/source/v3/volumes-v3-volumes.inc). Each schema names its source file.
+
+    Paths are relative to the block-storage endpoint, which must be the project-less v3 root
+    (".../v3"): POST /volumes, GET and DELETE /volumes/{volume_id}. Cinder 2026.1 routes every
+    resource both with and without a /{project_id} prefix, for every microversion
+    (cinder/api/v3/router.py ProjectMapper.resource L57-97; api-ref v3 index note on 3.67).
+    The README records why this subset uses the project-less form.
+
+    No microversion header is sent, so Cinder answers at 3.0, the minimum
+    (cinder/api/openstack/api_version_request.py _MIN_API_VERSION). Every field here exists at 3.0.
+
+    Bodies are wrapped in a `volume` envelope on the way in and out, so the generated spec has
+    one property, `volume`, and status fields are dotted (`volume.id`).
+  # The generated CRD is served at a version derived from this string: v3-0.
+  version: "3.0"
+servers:
+  - url: {{ include "openstack-cinder-provider-kog.authBridgeUrl" . }}
+    description: In-cluster Keystone-auth proxy in front of Cinder
+components:
+  # Neither oasgen-provider nor rest-dynamic-controller reads a `security` requirement; this scheme
+  # only makes oasgen-provider generate the VolumeConfiguration CRD. The auth-bridge drops the
+  # Authorization header and sends its own X-Auth-Token, so the bearer token is never used.
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  schemas:
+    # Request body of POST /volumes. Source: cinder/api/schemas/volumes.py `create` L25-72 (the
+    # schema validated at 3.0) and cinder/api/v3/volumes.py VolumeController.create L350-475.
+    VolumeCreateRequest:
+      type: object
+      required:
+        - volume
+      properties:
+        volume:
+          $ref: '#/components/schemas/VolumeCreate'
+    VolumeCreate:
+      type: object
+      required:
+        - size
+      properties:
+        size:
+          type: integer
+          minimum: 1
+          description: >-
+            Size in GiB. Cinder's schema allows it to be omitted when the volume is created from
+            a snapshot, a source volume or a backup (parameter_types.volume_size_allows_null);
+            this subset creates only empty or image-backed volumes, so it is required.
+        name:
+          type: string
+          maxLength: 255
+          description: Volume name. Cinder strips surrounding white space.
+        description:
+          type: string
+          maxLength: 255
+          description: Volume description. Cinder strips surrounding white space.
+        imageRef:
+          type: string
+          maxLength: 255
+          description: >-
+            Glance image ID (or a unique image name) to copy onto the volume. Cinder then marks the
+            volume bootable (api-ref "Create a volume"; create resolves it in
+            _image_uuid_from_ref, cinder/api/v3/volumes.py L282-324).
+        volume_type:
+          type: string
+          maxLength: 255
+          description: >-
+            Volume type, by name or ID. Optional: Cinder applies the default type. Give the NAME:
+            volume show reports the type by name (cinder/api/v3/views/volumes.py _get_volume_type
+            L85-100), so an ID would read as a difference on every observe.
+        availability_zone:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Availability zone for the volume. Optional.
+    # Response body of POST /volumes (202) and GET /volumes/{volume_id} (200). Both return
+    # self._view_builder.detail(req, volume) (cinder/api/v3/volumes.py create L474-475, show
+    # L97-107), built in cinder/api/v3/views/volumes.py legacy_detail L134-178. Only the fields a
+    # consumer needs are declared. Fields that Cinder can return as null are nullable.
+    VolumeResponse:
+      type: object
+      required:
+        - volume
+      properties:
+        volume:
+          $ref: '#/components/schemas/Volume'
+    Volume:
+      type: object
+      required:
+        - id
+        - status
+        - size
+      properties:
+        id:
+          type: string
+          readOnly: true
+          description: Volume UUID. The get and delete paths are addressed by it.
+        name:
+          type: string
+          nullable: true
+          description: display_name; null when the volume was created without a name.
+        description:
+          type: string
+          nullable: true
+          description: display_description; null when unset.
+        status:
+          type: string
+          readOnly: true
+          description: >-
+            creating, downloading, available, in-use, error, deleting, error_deleting and others
+            (api-ref status_vol). Wait for `available` before attaching or booting from it.
+        size:
+          type: integer
+          readOnly: true
+          description: Size in GiB.
+        bootable:
+          type: string
+          readOnly: true
+          description: >-
+            "true" or "false", as a STRING: Cinder renders str(volume.bootable).lower()
+            (cinder/api/v3/views/volumes.py L152).
+        availability_zone:
+          type: string
+          nullable: true
+        volume_type:
+          type: string
+          nullable: true
+          description: The volume type's name (see VolumeCreate.volume_type).
+        created_at:
+          type: string
+          readOnly: true
+        updated_at:
+          type: string
+          nullable: true
+          readOnly: true
+        multiattach:
+          type: boolean
+          readOnly: true
+        encrypted:
+          type: boolean
+          readOnly: true
+        attachments:
+          type: array
+          readOnly: true
+          description: >-
+            One item per ATTACHED attachment (cinder/api/v3/views/volumes.py _get_attachments
+            L106-132). Empty while the volume is detached.
+          items:
+            $ref: '#/components/schemas/VolumeAttachment'
+    VolumeAttachment:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The volume ID (Cinder repeats it here).
+        attachment_id:
+          type: string
+        volume_id:
+          type: string
+        server_id:
+          type: string
+          nullable: true
+          description: The Nova instance UUID.
+        host_name:
+          type: string
+          nullable: true
+          description: Shown to admin or service users only; null otherwise.
+        device:
+          type: string
+          nullable: true
+          description: Mount point inside the instance, e.g. /dev/vdb.
+        attached_at:
+          type: string
+          nullable: true
+paths:
+  /volumes:
+    post:
+      operationId: createVolume
+      summary: Create a volume (202; the volume starts in status creating)
+      description: >-
+        cinder/api/v3/volumes.py VolumeController.create, @wsgi.response(HTTPStatus.ACCEPTED) L350.
+        The response carries volume.id, which the get and delete paths read from status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VolumeCreateRequest'
+      responses:
+        '202':
+          description: Accepted. The volume exists and is being created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumeResponse'
+  /volumes/{volume_id}:
+    parameters:
+      - name: volume_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: showVolume
+      summary: Show a volume's details
+      description: >-
+        cinder/api/v3/volumes.py VolumeController.show L97-107. A missing or deleted volume raises
+        VolumeNotFound (cinder/volume/api.py API.get L594-605), a NotFound with code 404
+        (cinder/exception.py L321-336), which the API returns as 404
+        (cinder/api/openstack/wsgi.py L603-605).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumeResponse'
+        '404':
+          description: The volume does not exist (or was deleted).
+    delete:
+      operationId: deleteVolume
+      summary: Delete a volume (202; deletion is asynchronous)
+      description: >-
+        cinder/api/v3/volumes.py VolumeController.delete L68-95 returns 202 with no body. Cinder
+        refuses (400) a volume that is attached, migrating or has snapshots (api-ref "Delete a
+        volume" preconditions); detach it first.
+      responses:
+        '202':
+          description: Accepted. The volume moves to deleting.

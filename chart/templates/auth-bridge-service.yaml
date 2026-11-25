@@ -1,0 +1,17 @@
+{{- if .Values.authBridge.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openstack-cinder-provider-kog.authBridgeName" . }}
+  labels:
+    {{- include "openstack-cinder-provider-kog.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.authBridge.service.type }}
+  selector:
+    {{- include "openstack-cinder-provider-kog.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: auth-bridge
+  ports:
+    - name: api
+      port: {{ .Values.authBridge.service.port }}
+      targetPort: 8080
+{{- end }}

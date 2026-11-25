@@ -1,0 +1,71 @@
+{{- if .Values.restdefinitions.volume.enabled }}
+apiVersion: ogen.krateo.io/v1alpha1
+kind: RestDefinition
+metadata:
+  name: {{ .Release.Name }}-volume
+  labels:
+    {{- include "openstack-cinder-provider-kog.labels" . | nindent 4 }}
+spec:
+  oasPath: configmap://{{ .Release.Namespace }}/{{ .Release.Name }}-volume/volume.yaml
+  resourceGroup: {{ .Values.restdefinitions.volume.resourceGroup }}
+  resource:
+    # A Cinder block-storage v3 volume. Every body is wrapped in a `volume` envelope, so the spec is
+    # spec.volume.* and the status fields are dotted (status.volume.id), as in nova-kog's Instance.
+    #
+    # HOW IT IS ADDRESSED. The get and delete paths take the volume id from status.volume.id. That
+    # value can only come from the CREATE response: Cinder answers POST /volumes with 202 and the
+    # full volume, id included (cinder/api/v3/volumes.py create L350-475). A create that answered
+    # without the id would leave the CR unaddressable and the volume orphaned on delete (measured on
+    # nova-kog at oasgen 0.74.0). hack/validate-create-returns-get-id.py fails CI if the create
+    # response schema stops carrying every status path a get or delete path reads.
+    #
+    # NO FINDBY, like glance-kog's Image and nova-kog's Instance. Cinder volume names are not unique,
+    # so a findby by name could adopt another volume of the same name.
+    #
+    # NO UPDATE VERB. Cinder's update (PUT /volumes/{id}) accepts only name, description and metadata
+    # and refuses anything else (cinder/api/schemas/volumes.py `update`: additionalProperties false).
+    # rest-dynamic-controller sends spec.volume whole, size and imageRef included, so every update
+    # would be a 400. And a changed size is drift no update could fix. So a spec change after create
+    # shows as a not-up-to-date condition naming the field, and nothing is sent.
+    #
+    # READY MEANS THE VOLUME EXISTS, not that it is usable: the 202 sets Pending, and the first get
+    # that answers 200 makes the CR Ready, whatever the volume's status. Wait for
+    # status.volume.status == available before booting from or attaching the volume.
+    #
+    # identifiers are immutable and additionalStatusFields append-only on an installed
+    # RestDefinition (oasgen-provider CEL rules): add, never remove.
+    kind: {{ .Values.restdefinitions.volume.resourceKind }}
+    identifiers:
+      - volume.id
+      - volume.name
+    additionalStatusFields:
+      - volume.status
+      - volume.size
+      - volume.bootable
+      - volume.attachments
+      - volume.volume_type
+      - volume.availability_zone
+    verbsDescription:
+      - action: create
+        method: POST
+        path: /volumes
+        # 202 is already a success at runtime: rest-dynamic-controller accepts every 2xx the
+        # document declares (0.80.0 internal/tools/client/clienttools.go getValidResponseCode).
+        # Stating it here also lets the generator read the create response schema, which it looks
+        # up only under 200 and 201 by default (oasgen-provider #804, fixed in #805), so it can
+        # compare that schema with the get's.
+        successCodes:
+          - 202
+      - action: get
+        method: GET
+        path: /volumes/{volume_id}
+        fieldMapping:
+          - inPath: volume_id
+            inCustomResource: status.volume.id
+      - action: delete
+        method: DELETE
+        path: /volumes/{volume_id}
+        fieldMapping:
+          - inPath: volume_id
+            inCustomResource: status.volume.id
+{{- end }}

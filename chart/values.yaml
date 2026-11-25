@@ -1,0 +1,62 @@
+# Default values for openstack-cinder-provider-kog.
+#
+# The chart ships one RestDefinition (ogen.krateo.io/v1alpha1) and the curated OpenAPI document it
+# reads (as a ConfigMap), plus a stateless Keystone auth-bridge proxy. oasgen-provider, installed
+# cluster-wide, generates the CRDs and runs one rest-dynamic-controller per RestDefinition.
+#
+# When installed through the CompositionDefinition, core-provider generates the Composition CRD from
+# values.schema.json, so every key here is also a Composition spec field.
+
+# Toggle the per-resource RestDefinitions.
+restdefinitions:
+  volume:
+    enabled: true
+    # The API group of the generated Volume and VolumeConfiguration CRDs.
+    resourceGroup: blockstorage.openstack.krateo.io
+    # The Kind of the generated CRD. Cinder wraps every body in a `volume` envelope, so the generated
+    # spec has a property named `volume`. hack/render-check.py renders this Kind through
+    # oasgen-provider's own generator in CI, so a Kind that collides with that property fails there.
+    resourceKind: Volume
+
+# auth-bridge: a stateless Keystone-auth reverse proxy (openstacksdk). The generated controller sends
+# plain HTTP here; the proxy adds a fresh X-Auth-Token and forwards to the block-storage endpoint.
+# The script is chart/scripts/openstack-auth-proxy.py, byte-identical to openstack-glance-operator-kog's.
+#
+#   kubectl create secret generic cinder-clouds --from-file=clouds.yaml=clouds.yaml
+#
+# On krateo-openstack-blueprint with kogCredentials.enabled, use the Secret it renders:
+#   cloudsSecret: openstack-kog-clouds
+authBridge:
+  enabled: true
+  replicaCount: 1
+  cloudsSecret: cinder-clouds
+  osCloud: openstack
+  # The catalog service type. block-storage is the official type; keystoneauth matches it to a
+  # catalog entry of type volumev3 (the type the blueprint registers). Do not set volumev3: that
+  # alias implies "version 3.0", which makes keystoneauth run version discovery instead of
+  # returning the catalog URL as it is. docs/overview.md has the measurement.
+  serviceType: block-storage
+  osInterface: internal
+  # Override the discovered endpoint (optional). It must end in /v3, with no project id:
+  # the OpenAPI paths are relative to it (/volumes, /volumes/{volume_id}).
+  # Example: http://cinder-api.openstack.svc.cluster.local:8776/v3
+  upstreamEndpoint: ""
+  image:
+    repository: quay.io/airshipit/openstack-client
+    tag: "2026.1-ubuntu_noble"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  # Optional, unset by default: podAnnotations (object), nodeSelector (object),
+  # tolerations (list) and affinity (object). values.schema.json types them.
+
+nameOverride: ""
+fullnameOverride: ""

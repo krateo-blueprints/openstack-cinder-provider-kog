@@ -1,0 +1,10 @@
+# Patterns to ignore when building packages.
+*.tmp
+*.bak
+.git/
+.gitignore
+.DS_Store
+__pycache__/
+*.pyc
+# samples are docs, not deployed by default
+samples/

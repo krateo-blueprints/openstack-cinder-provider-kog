@@ -1,0 +1,13 @@
+apiVersion: core.krateo.io/v1alpha1
+kind: CompositionDefinition
+metadata:
+  name: openstack-cinder-provider-kog
+  namespace: krateo-system
+spec:
+  chart:
+    # release-oci (krateo-platformops/.github 2.1.0, ship-cd.sh) copies this file into the chart
+    # package, because it sits in the chart directory's parent, and stamps CHART_VERSION with the
+    # release version. Its verify step refuses the release unless this url names the chart being
+    # published at that version. So the published archive registers itself.
+    url: oci://ghcr.io/krateo-blueprints/charts/openstack-cinder-provider-kog
+    version: CHART_VERSION

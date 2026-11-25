@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "openstack-cinder-provider-kog values",
+  "description": "Values for the OpenStack Cinder KOG chart. It renders the RestDefinition for Cinder block-storage v3 volumes and a stateless Keystone auth-bridge proxy in front of Cinder.",
+  "type": "object",
+  "properties": {
+    "restdefinitions": {
+      "type": "object",
+      "description": "Per-resource RestDefinitions. Each can be turned off and carries its API group and Kind.",
+      "properties": {
+        "volume": {
+          "type": "object",
+          "description": "Cinder Volume: create, get, delete over /volumes (block storage v3). No update verb (docs/overview.md says why).",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Render the Volume RestDefinition and its OpenAPI ConfigMap.",
+              "default": true
+            },
+            "resourceGroup": {
+              "type": "string",
+              "description": "API group of the generated Volume and VolumeConfiguration CRDs.",
+              "default": "blockstorage.openstack.krateo.io"
+            },
+            "resourceKind": {
+              "type": "string",
+              "description": "Kind of the generated CRD.",
+              "default": "Volume"
+            }
+          }
+        }
+      }
+    },
+    "authBridge": {
+      "type": "object",
+      "description": "Stateless Keystone-auth reverse proxy (openstacksdk). It authenticates with clouds.yaml, finds the block-storage endpoint in the catalog, adds a fresh X-Auth-Token and forwards the controller's plain-HTTP calls.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Deploy the auth-bridge Deployment, Service and script ConfigMap.",
+          "default": true
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "auth-bridge replicas. The proxy is stateless.",
+          "default": 1
+        },
+        "cloudsSecret": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Secret in the release namespace with key clouds.yaml. On krateo-openstack-blueprint with kogCredentials.enabled: openstack-kog-clouds.",
+          "default": "cinder-clouds"
+        },
+        "osCloud": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Cloud name inside clouds.yaml (OS_CLOUD).",
+          "default": "openstack"
+        },
+        "serviceType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Catalog service type to proxy. block-storage matches a volumev3 catalog entry; volumev3 itself would trigger version discovery.",
+          "default": "block-storage"
+        },
+        "osInterface": {
+          "type": "string",
+          "enum": [
+            "internal",
+            "public",
+            "admin"
+          ],
+          "description": "Catalog endpoint interface.",
+          "default": "internal"
+        },
+        "upstreamEndpoint": {
+          "type": "string",
+          "description": "Override the discovered endpoint. Empty: use the catalog. Otherwise the block-storage v3 root with no project id, e.g. http://cinder-api.openstack.svc.cluster.local:8776/v3.",
+          "default": "",
+          "pattern": "^$|^https?://[^\\s]+/v3/?$"
+        },
+        "image": {
+          "type": "object",
+          "description": "Image that runs the proxy. It must provide python3 and openstacksdk.",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "default": "quay.io/airshipit/openstack-client"
+            },
+            "tag": {
+              "type": "string",
+              "default": "2026.1-ubuntu_noble"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ],
+              "default": "IfNotPresent"
+            }
+          }
+        },
+        "service": {
+          "type": "object",
+          "description": "The Service the generated controller calls.",
+          "properties": {
+            "type": {
+              "type": "string",
+              "default": "ClusterIP"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535,
+              "default": 8080
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "description": "Container resources for the proxy."
+        },
+        "podAnnotations": {
+          "type": "object",
+          "description": "Annotations for the auth-bridge pod. Unset by default.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "nodeSelector": {
+          "type": "object",
+          "description": "nodeSelector for the auth-bridge pod. Unset by default.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tolerations": {
+          "type": "array",
+          "description": "Tolerations for the auth-bridge pod. Unset by default.",
+          "items": {
+            "type": "object"
+          }
+        },
+        "affinity": {
+          "type": "object",
+          "description": "Affinity for the auth-bridge pod. Unset by default."
+        }
+      }
+    },
+    "nameOverride": {
+      "type": "string",
+      "description": "Override the chart name in resource names.",
+      "default": ""
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Override the full resource name prefix.",
+      "default": ""
+    }
+  }
+}
