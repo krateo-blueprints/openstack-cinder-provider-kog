@@ -1,0 +1,50 @@
+# Sample Cinder CRs, for a release installed in namespace openstack.
+#
+# The VolumeConfiguration needs a token Secret because the OpenAPI document declares a bearer scheme.
+# The auth-bridge drops that header and adds its own Keystone token, so the value is never used and is
+# not a credential:
+#   kubectl -n openstack create secret generic cinder-kog-unused-token \
+#     --from-literal=token=unused-the-auth-bridge-sends-the-keystone-token
+---
+apiVersion: blockstorage.openstack.krateo.io/v1alpha1
+kind: VolumeConfiguration
+metadata:
+  name: cinder-config
+  namespace: openstack
+spec:
+  authentication:
+    bearer:
+      tokenRef:
+        name: cinder-kog-unused-token
+        namespace: openstack
+        key: token
+---
+# An empty 1 GiB volume.
+apiVersion: blockstorage.openstack.krateo.io/v3-0
+kind: Volume
+metadata:
+  name: data-1
+  namespace: openstack
+spec:
+  configurationRef:
+    name: cinder-config
+    namespace: openstack
+  volume:
+    size: 1
+    name: data-1
+    description: an empty volume made by the Cinder KOG
+---
+# A bootable volume: Cinder copies the Glance image onto it and sets bootable "true".
+apiVersion: blockstorage.openstack.krateo.io/v3-0
+kind: Volume
+metadata:
+  name: boot-1
+  namespace: openstack
+spec:
+  configurationRef:
+    name: cinder-config
+    namespace: openstack
+  volume:
+    size: 2
+    name: boot-1
+    imageRef: "<Glance image id, e.g. an Image's status.id from glance-kog>"

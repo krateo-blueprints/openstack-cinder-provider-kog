@@ -1,0 +1,29 @@
+# Install the Cinder KOG through Krateo instead of a raw helm install.
+#
+# Applying this deploys the operator layer: the Volume RestDefinition and its OpenAPI ConfigMap,
+# and the auth-bridge proxy. It creates no volume. Volumes are Volume CRs (see
+# examples/bootable-volume).
+#
+# apiVersion and Kind come from the CompositionDefinition (compositiondefinition.yaml): group
+# composition.krateo.io, version from the chart version (0.1.0 -> v0-1-0), Kind from the CD name
+# without hyphens (openstack-cinder-provider-kog -> OpenstackCinderProviderKog).
+# hack/release-preflight refuses a release whose version this file does not name.
+#
+# Prerequisite: a Secret with key clouds.yaml in this namespace. On krateo-openstack-blueprint with
+# kogCredentials.enabled it is openstack-kog-clouds, in the Openstack release's namespace.
+---
+apiVersion: composition.krateo.io/v0-1-0
+kind: OpenstackCinderProviderKog
+metadata:
+  name: openstack-cinder-provider-kog
+  namespace: openstack
+spec:
+  authBridge:
+    cloudsSecret: openstack-kog-clouds
+    osCloud: openstack
+    # Empty: the proxy uses the catalog's block-storage endpoint (on the blueprint,
+    # http://cinder-api.openstack.svc.cluster.local:8776/v3).
+    upstreamEndpoint: ""
+  restdefinitions:
+    volume:
+      enabled: true

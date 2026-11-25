@@ -1,0 +1,163 @@
+name: lint
+
+# Every pull request and every push to main. release-oci.yaml's preflight refuses to release a commit
+# without a successful run of this workflow (PUBLISHING.md rule 10), so every gate that matters is here.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # PUBLISHING.md rule 9: every reusable workflow this repository calls is pinned by commit SHA with a
+  # version comment. The shared check refuses any that is not.
+  pinned-uses:
+    permissions:
+      contents: read
+    uses: krateo-blueprints/charts/.github/workflows/pinned-uses.yaml@5825f8963e30193120c0460f6c6f31b596bf1ed8 # 1.13.2
+
+  # REPOSITORY.md R1-R8: name, chart/ layout, chart name, CHART_VERSION, shared release, LICENSE,
+  # README, Dependabot, docs bundle, shared checks.
+  repository-standard:
+    permissions:
+      contents: read
+    uses: krateo-blueprints/charts/.github/workflows/repository-standard.yaml@5825f8963e30193120c0460f6c6f31b596bf1ed8 # 1.13.2
+
+  lint-docs:
+    uses: krateo-platformops/.github/.github/workflows/lint-docs.yaml@3ff640fd0dbef64c29b7a63a88b98da7f99e8052 # 1.0.1
+
+  gates:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - run: python3 -m pip install --quiet "pyyaml==6.0.2"
+
+      # Both fields must carry the placeholder, so a release stamps both from the tag (R4). Then stamp
+      # them for CI: helm refuses CHART_VERSION as a version.
+      - name: Stamp CHART_VERSION for CI
+        run: |
+          set -euo pipefail
+          grep -qx 'version: CHART_VERSION' chart/Chart.yaml && grep -qx 'appVersion: "CHART_VERSION"' chart/Chart.yaml \
+            || { echo "::error::chart/Chart.yaml must declare version: CHART_VERSION and appVersion: \"CHART_VERSION\""; exit 1; }
+          grep -qx '    version: CHART_VERSION' compositiondefinition.yaml \
+            || { echo "::error::compositiondefinition.yaml must install version CHART_VERSION"; exit 1; }
+          sed -i 's/CHART_VERSION/0.0.0-ci/g' chart/Chart.yaml
+
+      - name: helm lint and template
+        run: |
+          set -euo pipefail
+          helm lint chart --strict
+          helm template openstack-cinder-provider-kog chart --namespace openstack > "$RUNNER_TEMP/render.yaml"
+          n=$(grep -c '^kind: RestDefinition$' "$RUNNER_TEMP/render.yaml" || true)
+          echo "rendered ${n} RestDefinition(s)"
+          [ "$n" -ge 1 ] || { echo "::error::the chart rendered no RestDefinition"; exit 1; }
+          # The schema refuses an upstreamEndpoint that carries a project id (README, "Project-less URLs"),
+          # and it must be the schema's pattern that refuses it, not some other error.
+          rc=0
+          helm template t chart --set authBridge.upstreamEndpoint=http://cinder-api:8776/v3/my-project \
+            > /dev/null 2> "$RUNNER_TEMP/refused.txt" || rc=$?
+          if [ "$rc" = 0 ] || ! grep -q "/authBridge/upstreamEndpoint.*does not match pattern" "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt"
+            echo "::error::values.schema.json did not refuse an upstreamEndpoint with a project id"; exit 1
+          fi
+          echo "values.schema.json refuses an upstreamEndpoint with a project id"
+          helm template t chart --set authBridge.upstreamEndpoint=http://cinder-api:8776/v3 > /dev/null
+
+      # Gating. No inline { } or [ ] anywhere: committed YAML, the render, the OpenAPI asset, docs blocks.
+      - name: YAML is block style (hack/check-yaml-block-style.py)
+        run: python3 hack/check-yaml-block-style.py "$RUNNER_TEMP/render.yaml" .
+
+      # Gating. Every get/delete parameter read from status is written by the create response: without
+      # it the CR is unaddressable and the volume is orphaned on delete. Bites on the real chart.
+      - name: The create response carries what the get path reads (hack/validate-create-returns-get-id.py)
+        run: python3 hack/validate-create-returns-get-id.py chart
+
+      # Gating. Every identifier and additionalStatusField resolves in its observe response;
+      # rest-dynamic-controller skips an absent one silently.
+      - name: Every status field resolves in its observe response (hack/validate-status-fields.py)
+        run: python3 hack/validate-status-fields.py chart
+
+      # Gating. A findby whose identifiers are not keys of the list item can never match. Volume has no
+      # findby; the gate runs so a kind that gains one is checked. It reads the oasgen-provider minimum
+      # from README.md. Self-tests first.
+      - name: findby identifiers are keys of the list item (hack/validate-findby-identifiers.py)
+        run: python3 hack/validate-findby-identifiers.py chart
+
+      # Gating. The release hook refuses an example Composition that names another version. Run it here
+      # against the version the example names, and against a different one, which it must refuse.
+      - name: Release preflight hook works (hack/release-preflight)
+        run: |
+          set -euo pipefail
+          test -x hack/release-preflight || { echo "::error::hack/release-preflight is not executable"; exit 1; }
+          v=$(sed -n 's#^apiVersion: composition.krateo.io/v\([0-9]*\)-\([0-9]*\)-\([0-9]*\)$#\1.\2.\3#p' examples/composition/composition.yaml | head -1)
+          [ -n "$v" ] || { echo "::error::examples/composition/composition.yaml names no composition.krateo.io version"; exit 1; }
+          hack/release-preflight "$v"
+          if hack/release-preflight 99.0.0 > /dev/null; then
+            echo "::error::hack/release-preflight accepted 99.0.0 for an example that names ${v}"; exit 1
+          fi
+          echo "release-preflight accepts ${v} and refuses 99.0.0"
+
+  # Renders the RestDefinition through oasgen-provider's own generator (oasgen-render) and checks the
+  # CRDs it generates. Two versions: 0.80.0, the one krateo-openstack-blueprint installs, and 0.93.0,
+  # the newest on 2026-11-25. preflight-refs.yaml resolves both image references.
+  render-check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Full literal references, so hack/preflight-refs.py resolves each one against the registry.
+        oasgen-image:
+          - ghcr.io/krateo-platformops/oasgen-provider:0.80.0
+          - ghcr.io/krateo-platformops/oasgen-provider:0.93.0
+    env:
+      OASGEN_IMAGE: ${{ matrix.oasgen-image }}
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - run: python3 -m pip install --quiet "pyyaml==6.0.2"
+
+      # Refuses a version oasgen-provider's publisher has retracted (its retracted-versions.yaml). Two
+      # controls first, so a check that cannot refuse, or refuses everything, fails here: 0.66.0
+      # (retracted) must be refused with rc 1 and 0.67.0 must pass. An unreadable list fails closed.
+      - name: The rendered version is not retracted (hack/check-retracted.py)
+        run: |
+          rc=0; python3 hack/check-retracted.py --version 0.66.0 > control.out 2>&1 || rc=$?
+          sed 's/^::error::/control, refused as expected: /' control.out
+          [ "$rc" = 1 ] || { echo "::error::control: 0.66.0 gave rc=$rc, expected 1 (refused)"; exit 1; }
+          python3 hack/check-retracted.py --version 0.67.0 || { echo "::error::control: 0.67.0 was refused"; exit 1; }
+          python3 hack/check-retracted.py
+
+      - name: Start oasgen-render
+        run: |
+          docker run -d --name oasgen-render -p 8081:8081 --entrypoint /bin/oasgen-render "$OASGEN_IMAGE"
+          for i in $(seq 1 30); do curl -sf localhost:8081/healthz && exit 0; sleep 1; done
+          docker logs oasgen-render; exit 1
+
+      - name: Render the chart
+        run: |
+          set -euo pipefail
+          sed -i 's/CHART_VERSION/0.0.0-ci/g' chart/Chart.yaml
+          helm template openstack-cinder-provider-kog chart --namespace openstack > "$RUNNER_TEMP/render.yaml"
+
+      - name: Generated CRDs (hack/render-check.py)
+        run: python3 hack/render-check.py "$RUNNER_TEMP/render.yaml" http://localhost:8081/render

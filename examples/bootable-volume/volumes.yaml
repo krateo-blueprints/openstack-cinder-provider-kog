@@ -1,0 +1,53 @@
+# A bootable volume from a Glance image, and an empty data volume. This is the shape of
+# krateo-openstack-blueprint #308's run B: boot a nova-kog Instance from boot-volume, then attach
+# data-volume to it. Namespace openstack: the KOG is installed there (examples/composition).
+#
+# The VolumeConfiguration exists because the OpenAPI document declares a bearer scheme. The
+# auth-bridge drops that header and sends its own Keystone token, so the referenced Secret holds a
+# placeholder, not a credential:
+#   kubectl -n openstack create secret generic cinder-kog-unused-token \
+#     --from-literal=token=unused-the-auth-bridge-sends-the-keystone-token
+---
+apiVersion: blockstorage.openstack.krateo.io/v1alpha1
+kind: VolumeConfiguration
+metadata:
+  name: cinder-config
+  namespace: openstack
+spec:
+  authentication:
+    bearer:
+      tokenRef:
+        name: cinder-kog-unused-token
+        namespace: openstack
+        key: token
+---
+apiVersion: blockstorage.openstack.krateo.io/v3-0
+kind: Volume
+metadata:
+  name: boot-volume
+  namespace: openstack
+spec:
+  configurationRef:
+    name: cinder-config
+    namespace: openstack
+  volume:
+    # At least the image's min_disk, and at least its virtual size.
+    size: 2
+    name: boot-volume
+    description: bootable volume made by the Cinder KOG
+    # The Glance image id (for example a glance-kog Image's status.id).
+    imageRef: "<glance image id>"
+---
+apiVersion: blockstorage.openstack.krateo.io/v3-0
+kind: Volume
+metadata:
+  name: data-volume
+  namespace: openstack
+spec:
+  configurationRef:
+    name: cinder-config
+    namespace: openstack
+  volume:
+    size: 1
+    name: data-volume
+    description: data volume made by the Cinder KOG

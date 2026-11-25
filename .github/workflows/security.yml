@@ -1,0 +1,19 @@
+name: security
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: read
+
+jobs:
+  security:
+    uses: krateo-platformops/.github/.github/workflows/security.yml@3ff640fd0dbef64c29b7a63a88b98da7f99e8052 # 1.0.1

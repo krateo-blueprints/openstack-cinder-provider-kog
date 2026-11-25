@@ -1,0 +1,110 @@
+# Publishes this repository's chart, openstack-cinder-provider-kog, on a release tag: to GHCR, then the
+# same bytes to the krateo-blueprints helm index the Marketplace installs from (PUBLISHING.md rule 1).
+# One call to the org's shared release-oci 2.1.0 does both (REPOSITORY.md R5); this file supplies the
+# triggers, the OCI path, the index channel and the token. The checks only this repository can make run
+# first, in `preflight`.
+#
+# CHANNEL: `blueprints`. release-oci copies compositiondefinition.yaml from the chart directory's parent
+# (the repository root) into the package (ship-cd.sh), so the archive carries values.schema.json and a
+# CompositionDefinition, which is the blueprints channel by PUBLISHING.md rule 2. The index gate refuses
+# any other channel for such an archive.
+name: release-oci
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      chart_version:
+        description: "Chart version (CHART_VERSION). Required on a dispatch: the ref of a dispatch is a branch."
+        required: false
+      dry_run:
+        description: "Build and check everything, push nothing. A manual run is a rehearsal unless this is unchecked."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Everything that can refuse the release refuses it HERE, before GHCR holds anything.
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # list this repository's lint runs
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Resolve the chart version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.chart_version || '' }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          v="${INPUT_VERSION:-$REF_NAME}"
+          # Its shape (plain X.Y.Z, PUBLISHING.md rule 13) is checked by the shared release preflight.
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      # PUBLISHING.md rule 10: THIS commit must have a concluded, successful run of lint.yaml (which runs
+      # on every push to main and holds every gate).
+      - name: The commit being released must have passed lint
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          runs="repos/${REPO}/actions/workflows/lint.yaml/runs?head_sha=${SHA}&per_page=100"
+          done_n=$(gh api "$runs" --jq '[.workflow_runs[] | select(.status == "completed")] | length')
+          ok_n=$(gh api "$runs" --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          echo "lint runs on ${SHA}: ${done_n} completed, ${ok_n} successful"
+          if [ "$done_n" -eq 0 ]; then
+            echo "::error::No lint run exists for ${SHA}. Dispatch lint.yaml on it, confirm it passes, then re-tag."
+            exit 1
+          fi
+          if [ "$ok_n" -eq 0 ]; then
+            echo "::error::lint ran on ${SHA} but never succeeded. Refusing to publish."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # release-oci stamps CHART_VERSION wherever it appears. The chart must carry it as version AND
+      # appVersion (R4), and the CompositionDefinition as the version it installs.
+      - name: Chart and CompositionDefinition take their version from the tag
+        run: |
+          set -euo pipefail
+          f=chart/Chart.yaml
+          v=$(sed -n 's/^version: *//p' "$f" | tr -d '"'); a=$(sed -n 's/^appVersion: *//p' "$f" | tr -d '"')
+          if [ "$v" != CHART_VERSION ] || [ "$a" != CHART_VERSION ]; then
+            echo "::error::$f has version '$v' appVersion '$a'; both must be CHART_VERSION"
+            exit 1
+          fi
+          grep -qx '    version: CHART_VERSION' compositiondefinition.yaml \
+            || { echo "::error::compositiondefinition.yaml must install version CHART_VERSION"; exit 1; }
+          echo "version, appVersion and the CompositionDefinition's version are CHART_VERSION"
+
+  # The org's shared release, 2.1.0. Before anything is pushed it runs the release preflight (a plain
+  # X.Y.Z version, PUBLISHING.md rules 12-13, and this repository's hack/release-preflight hook), checks
+  # the index token's presence and shape, ships compositiondefinition.yaml inside the package and verifies
+  # it installs this chart at this version, and passes the package through the index's content gate
+  # (channel, complete archive, sources, plain version). Then it pushes to GHCR, pulls the chart back and
+  # indexes those bytes through publish-chart (rule 1). Pinned by full commit SHA: it receives
+  # CHARTS_PUBLISH_TOKEN, an org-wide write token. A manual run defaults to dry_run.
+  release-oci:
+    needs: preflight
+    uses: krateo-platformops/.github/.github/workflows/release-oci.yaml@aa90d48e1a101d5e9b3e547bca116b97c49513b5 # 2.1.0
+    permissions:
+      contents: read
+      packages: write
+    with:
+      chart_version: ${{ needs.preflight.outputs.version }}
+      oci_repo: oci://ghcr.io/krateo-blueprints/charts
+      index_channel: blueprints
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    secrets:
+      charts_publish_token: ${{ secrets.CHARTS_PUBLISH_TOKEN }}

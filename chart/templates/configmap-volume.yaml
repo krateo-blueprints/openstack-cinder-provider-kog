@@ -1,0 +1,11 @@
+{{- if .Values.restdefinitions.volume.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-volume
+  labels:
+    {{- include "openstack-cinder-provider-kog.labels" . | nindent 4 }}
+data:
+  volume.yaml: |
+{{ tpl (.Files.Get "assets/volume.yaml") . | indent 4 }}
+{{- end }}
