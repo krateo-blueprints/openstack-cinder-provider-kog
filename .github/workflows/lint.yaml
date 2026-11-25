@@ -111,6 +111,13 @@ jobs:
           fi
           echo "release-preflight accepts ${v} and refuses 99.0.0"
 
+      # Gating. prerelease.yaml reaches GHCR only: dispatch only, exactly contents: read + packages: write, no
+      # reusable workflow, no secret but GITHUB_TOKEN, no index, release or tag step; the pre-release shape checked
+      # before the push; the CompositionDefinition and examples stamped to agree. Then the version table, derive in a
+      # throwaway repository, and loosened and mutated copies, each of which must be caught.
+      - name: A pre-release reaches GHCR only (hack/validate-prerelease-channel.py)
+        run: python3 hack/validate-prerelease-channel.py .
+
   # Renders the RestDefinition through oasgen-provider's own generator (oasgen-render) and checks the
   # CRDs it generates. Two versions: 0.80.0, the one krateo-openstack-blueprint installs, and 0.93.0,
   # the newest on 2026-11-25. preflight-refs.yaml resolves both image references.

@@ -10,7 +10,7 @@ docs/usage.md: install with helm or through Krateo, the blueprint's credentials,
 docs/configuration.md: every chart value, the blueprint credential mapping, the VolumeConfiguration
 docs/api.md: the generated Volume and VolumeConfiguration CRDs, field by field, and the Composition kind
 docs/examples.md: index of the examples
-docs/release.md: tag -> preflight -> shared release-oci 2.1.0 -> GHCR and the helm index, blueprints channel
+docs/release.md: tag -> preflight -> shared release-oci 2.1.0 -> GHCR and the helm index, blueprints channel; pre-releases (prerelease.yaml, GHCR only, run artifact)
 docs/log.md: curated history
 examples/composition/README.md: install through the CompositionDefinition
 examples/bootable-volume/README.md: a bootable Volume and a data Volume, the shape of #308 run B
@@ -19,3 +19,4 @@ chart/templates/rd-volume.yaml: the Volume RestDefinition, its verbs and why the
 chart/scripts/openstack-auth-proxy.py: the auth-bridge, identical to glance-kog's
 compositiondefinition.yaml: registers the chart; the release ships it inside the package
 hack/README.md: the CI gates and the release hook
+.github/workflows/prerelease.yaml: dispatch-only pre-release to GHCR, X.Y.Z-main.g<sha7>, never the index, a release or a tag

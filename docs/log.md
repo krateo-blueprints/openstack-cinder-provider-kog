@@ -13,6 +13,16 @@ timestamp: 2026-11-25T00:00:00Z
 
 Release notes live in GitHub Releases.
 
+## 2026-11-25: pre-releases
+
+- **Why:** run B must install an untagged commit through the normal CompositionDefinition path, and release-oci cannot:
+  its preflight and index gate refuse any version that is not plain `X.Y.Z`.
+- **What:** `prerelease.yaml` (dispatch only) pushes `X.Y.Z-main.g<sha7>` or `-dev.g<sha7>` to GHCR and attaches the
+  stamped CompositionDefinition and examples as a run artifact. `hack/release-version.sh` defines both shapes;
+  `hack/release-preflight` now refuses a pre-release version. Adapted from rook-ceph-blueprint `2f4ce94`.
+- **Gate:** `hack/validate-prerelease-channel.py`: no path to the index, a release or a tag; permissions exactly
+  `contents: read` + `packages: write`; each check proven on a mutated copy.
+
 ## 2026-11-25: first version (0.1.0, unreleased)
 
 - **Why:** krateo-openstack-blueprint #308 (Ceph storage) passed its first live run: cinder and glance
