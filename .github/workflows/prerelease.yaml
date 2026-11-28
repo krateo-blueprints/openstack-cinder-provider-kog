@@ -100,7 +100,7 @@ jobs:
       # on another digest.
       - name: Locate the shared chart push
         id: chart-push
-        uses: krateo-platformops/.github/.github/actions/chart-push@3ff640fd0dbef64c29b7a63a88b98da7f99e8052 # 1.0.1
+        uses: krateo-platformops/.github/.github/actions/chart-push@4c6aebb6b1ec685ab77d7511ab32277ba0c3baf6 # 1.0.2
 
       # The chart and its CompositionDefinition stamped at the pre-release version, the CompositionDefinition shipped
       # inside the archive as release-oci does, then pushed. The version shape is checked again here, before anything
